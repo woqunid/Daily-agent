@@ -137,17 +137,26 @@ function parseEntry(entry: unknown, source: ContentSource): Article | undefined 
 type HtmlLink = Readonly<{
   title: string;
   link: string;
+  content: string;
 }>;
 
 function extractHtmlLinks(html: string, baseUrl: string): readonly HtmlLink[] {
   const matches = html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
+  const pageSummary = extractPageSummary(html);
 
   return Array.from(matches)
-    .map((match) => parseHtmlLink(match, baseUrl))
+    .map((match) => parseHtmlLink({ match, baseUrl, pageSummary }))
     .filter((link): link is HtmlLink => link !== undefined);
 }
 
-function parseHtmlLink(match: RegExpMatchArray, baseUrl: string): HtmlLink | undefined {
+type HtmlLinkParseConfig = Readonly<{
+  match: RegExpMatchArray;
+  baseUrl: string;
+  pageSummary: string;
+}>;
+
+function parseHtmlLink(config: HtmlLinkParseConfig): HtmlLink | undefined {
+  const { match, baseUrl, pageSummary } = config;
   const href = match[1];
   const title = cleanText(match[2] ?? "");
 
@@ -158,6 +167,7 @@ function parseHtmlLink(match: RegExpMatchArray, baseUrl: string): HtmlLink | und
   return {
     title,
     link: new URL(href, baseUrl).toString(),
+    content: readLinkContext(match, pageSummary),
   };
 }
 
@@ -184,9 +194,36 @@ function buildHtmlArticle(
     link: item.link,
     source: source.name,
     publishedAt: date.toISOString(),
-    content: item.title,
+    content: item.content || item.title,
     categoryHint: readCategoryHint(source),
   };
+}
+
+function extractPageSummary(html: string): string {
+  const meta = html.match(
+    /<meta\b[^>]*(?:name|property)=["'](?:description|og:description)["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+  );
+
+  if (meta?.[1]) {
+    return cleanText(meta[1]);
+  }
+
+  const paragraphs = Array.from(html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi))
+    .map((match) => cleanText(match[1] ?? ""))
+    .filter((text) => text.length >= 20);
+
+  return truncateText(paragraphs.join(" "), ARTICLE_CONTENT_LIMIT);
+}
+
+function readLinkContext(match: RegExpMatchArray, pageSummary: string): string {
+  const rawContext = match.input?.slice(match.index ?? 0, (match.index ?? 0) + 1200) ?? "";
+  const context = cleanText(rawContext);
+
+  if (context.length >= 20) {
+    return truncateText(context, ARTICLE_CONTENT_LIMIT);
+  }
+
+  return pageSummary;
 }
 
 function isUsefulTitle(title: string): boolean {

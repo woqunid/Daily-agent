@@ -82,8 +82,8 @@ function ReportView({ categories }: Readonly<{ categories: readonly DailyCategor
           <h2>{category.name}</h2>
           <div className="divider" />
           <div className="article-list">
-            {category.items.map((item) => (
-              <section className="article-item" key={`${category.name}-${item.link}`}>
+            {category.items.map((item, index) => (
+              <section className="article-item" key={`${category.name}-${index}-${item.link}`}>
                 <div className="article-meta">
                   <span>{item.source}</span>
                   <span>{item.typeTag}</span>

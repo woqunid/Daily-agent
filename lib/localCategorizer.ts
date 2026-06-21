@@ -10,6 +10,7 @@ import type { Article, DailyCategory, DailyItem } from "@/lib/types";
 
 const DEFAULT_TYPE_TAG: DailyItem["typeTag"] = "产品发布";
 const DEFAULT_IMPORTANCE: DailyItem["importance"] = "一般动态";
+const SUMMARY_TARGET_LENGTH = 140;
 
 export function generateLocalCategories(
   articles: readonly Article[],
@@ -94,6 +95,17 @@ function buildDailyItem(article: Article): DailyItem {
 }
 
 function buildSummary(article: Article): string {
-  const text = article.content || article.title;
-  return truncateText(text, SUPPLEMENT_SUMMARY_LIMIT);
+  const content = normalizeSummarySource(article.content, article.title);
+
+  return truncateText(content, SUPPLEMENT_SUMMARY_LIMIT);
+}
+
+function normalizeSummarySource(content: string, title: string): string {
+  const text = content.trim();
+
+  if (!text || text === title) {
+    return "当前信息源只提供标题级信息，完整背景、更新范围和技术细节需要进入原文查看。";
+  }
+
+  return truncateText(text, SUMMARY_TARGET_LENGTH);
 }
