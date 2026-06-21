@@ -6,6 +6,7 @@ export type Article = Readonly<{
   source: string;
   publishedAt: string;
   content: string;
+  categoryHint?: DailyCategory["name"];
 }>;
 
 export type DailyItem = Readonly<{
@@ -31,6 +32,38 @@ export type DailyReport = Readonly<{
 export type SourceFailure = Readonly<{
   source: string;
   reason: string;
+}>;
+
+export type ContentSource = Readonly<
+  RssContentSource | HtmlContentSource | SeedContentSource
+>;
+
+type RssContentSource = Readonly<{
+  kind: "rss";
+  name: string;
+  url: string;
+  categoryHint?: DailyCategory["name"];
+}>;
+
+type HtmlContentSource = Readonly<{
+  kind: "html";
+  name: string;
+  url: string;
+  categoryHint?: DailyCategory["name"];
+}>;
+
+type SeedContentSource = Readonly<{
+  kind: "seed";
+  name: string;
+  url: string;
+  items: readonly SeedArticle[];
+}>;
+
+export type SeedArticle = Readonly<{
+  title: string;
+  link: string;
+  categoryHint: DailyCategory["name"];
+  content: string;
 }>;
 
 export type StreamEvent =

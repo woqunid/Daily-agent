@@ -1,5 +1,5 @@
-import { generateDailyCategories } from "@/lib/ai/client";
-import { formatDateFileName, formatDateLabel, getYesterdayRange } from "@/lib/date";
+import { formatDateFileName, getYesterdayRange } from "@/lib/date";
+import { generateLocalCategories } from "@/lib/localCategorizer";
 import { fetchArticlesForRange } from "@/lib/rss";
 import type { DailyReport, StreamEvent } from "@/lib/types";
 
@@ -27,7 +27,7 @@ export async function POST(): Promise<Response> {
 async function runDailyJob(controller: ReadableStreamDefaultController): Promise<void> {
   try {
     const range = getYesterdayRange(new Date());
-    writeEvent(controller, { type: "status", message: "正在抓取 RSS 源", progress: 15 });
+    writeEvent(controller, { type: "status", message: "正在抓取信息源", progress: 15 });
 
     const { articles, failures } = await fetchArticlesForRange(range);
     failures.forEach((failure) => writeEvent(controller, { type: "source-error", ...failure }));
@@ -39,7 +39,7 @@ async function runDailyJob(controller: ReadableStreamDefaultController): Promise
     });
 
     assertArticlesAvailable(articles.length);
-    const categories = await generateDailyCategories(articles, formatDateLabel(range.start));
+    const categories = generateLocalCategories(articles);
 
     writeEvent(controller, { type: "status", message: "正在生成日报", progress: 90 });
     writeEvent(controller, {
@@ -59,7 +59,7 @@ function assertArticlesAvailable(articleCount: number): void {
     return;
   }
 
-  throw new Error("RSS 抓取结果为空，无法生成包含四个分类的日报");
+  throw new Error("信息源抓取结果为空，无法生成包含四个分类的日报");
 }
 
 function buildReport(

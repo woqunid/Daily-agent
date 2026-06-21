@@ -3,6 +3,7 @@ import {
   AI_INPUT_ARTICLE_LIMIT,
   CATEGORY_NAMES,
   MAX_ITEMS_PER_CATEGORY,
+  MIN_ITEMS_PER_CATEGORY,
 } from "@/lib/constants";
 import { scoreArticleForCategory } from "@/lib/categoryRules";
 import type { Article } from "@/lib/types";
@@ -22,7 +23,7 @@ export function buildDailyPrompt(articles: readonly Article[], dateLabel: string
     `你是 AI 行业日报编辑，请基于以下 ${dateLabel} 发布的文章生成中文日报。`,
     "必须去重：同一事件来自多个来源时保留信息量最高的一条。",
     `必须按固定顺序返回这 ${CATEGORY_NAMES.length} 个分类：${CATEGORY_NAMES.join("、")}。`,
-    "每个分类都必须出现，并且每个分类的 items 至少包含 1 条真实文章。",
+    `每个分类都必须出现，并且每个分类的 items 至少包含 ${MIN_ITEMS_PER_CATEGORY} 条真实文章。`,
     `每个分类最多 ${MAX_ITEMS_PER_CATEGORY} 条。`,
     "每条摘要用 3-5 句中文概括核心内容。",
     "typeTag 只能是：产品发布、教程/实践。",

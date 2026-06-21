@@ -1,6 +1,7 @@
 import {
   CATEGORY_NAMES,
   MAX_ITEMS_PER_CATEGORY,
+  MIN_ITEMS_PER_CATEGORY,
   SUPPLEMENT_SUMMARY_LIMIT,
 } from "@/lib/constants";
 import { scoreArticleForCategory } from "@/lib/categoryRules";
@@ -10,7 +11,7 @@ import type { Article, DailyCategory, DailyItem } from "@/lib/types";
 const DEFAULT_TYPE_TAG: DailyItem["typeTag"] = "产品发布";
 const DEFAULT_IMPORTANCE: DailyItem["importance"] = "一般动态";
 const EMPTY_CONTENT_ERROR =
-  "RSS 抓取结果为空，无法保证四个分类都有真实内容";
+  "信息源抓取结果为空，无法保证四个分类都有真实内容";
 
 export function ensureCategoryCoverage(
   categories: readonly DailyCategory[],
@@ -24,16 +25,25 @@ export function ensureCategoryCoverage(
   const orderedCategories = orderKnownCategories(categories);
 
   return orderedCategories.map((category) => {
-    if (category.items.length > 0) {
+    if (category.items.length >= MIN_ITEMS_PER_CATEGORY) {
       return limitCategoryItems(category);
     }
 
-    const article = selectSupplementArticle(articles, category.name, usedLinks);
-    usedLinks.add(article.link);
+    const existingItems = category.items.slice(0, MAX_ITEMS_PER_CATEGORY);
+    const supplements = selectSupplementArticles({
+      articles,
+      categoryName: category.name,
+      usedLinks,
+      count: MIN_ITEMS_PER_CATEGORY - existingItems.length,
+    });
+    supplements.forEach((article) => usedLinks.add(article.link));
 
     return {
       name: category.name,
-      items: [buildSupplementItem(article)],
+      items: [
+        ...existingItems,
+        ...supplements.map(buildSupplementItem),
+      ],
     };
   });
 }
@@ -57,11 +67,19 @@ function collectUsedLinks(categories: readonly DailyCategory[]): Set<string> {
   return new Set(categories.flatMap((category) => category.items.map((item) => item.link)));
 }
 
-function selectSupplementArticle(
-  articles: readonly Article[],
-  categoryName: DailyCategory["name"],
-  usedLinks: ReadonlySet<string>,
-): Article {
+type SupplementSelection = Readonly<{
+  articles: readonly Article[];
+  categoryName: DailyCategory["name"];
+  usedLinks: ReadonlySet<string>;
+  count: number;
+}>;
+
+function selectSupplementArticles(config: SupplementSelection): readonly Article[] {
+  if (config.count <= 0) {
+    return [];
+  }
+
+  const { articles, categoryName, usedLinks } = config;
   const unusedArticles = articles.filter((article) => !usedLinks.has(article.link));
   const candidates = unusedArticles.length > 0 ? unusedArticles : articles;
   const ranked = candidates
@@ -72,13 +90,15 @@ function selectSupplementArticle(
     .filter((candidate) => candidate.score > 0)
     .sort((left, right) => right.score - left.score);
 
-  const best = ranked[0];
+  const selected = ranked.slice(0, config.count).map((candidate) => candidate.article);
 
-  if (!best) {
-    throw new Error(`分类 ${categoryName} 没有匹配的真实 RSS 文章`);
+  if (selected.length < config.count) {
+    throw new Error(
+      `分类 ${categoryName} 没有足够的真实文章，至少需要 ${MIN_ITEMS_PER_CATEGORY} 条`,
+    );
   }
 
-  return best.article;
+  return selected;
 }
 
 function buildSupplementItem(article: Article): DailyItem {

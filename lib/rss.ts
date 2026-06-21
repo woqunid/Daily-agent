@@ -1,11 +1,13 @@
 import { XMLParser } from "fast-xml-parser";
-import { ARTICLE_CONTENT_LIMIT, RSS_SOURCES } from "@/lib/constants";
+import {
+  ARTICLE_CONTENT_LIMIT,
+  CONTENT_SOURCES,
+  HTML_SOURCE_ITEM_LIMIT,
+} from "@/lib/constants";
 import { isWithinRange } from "@/lib/date";
-import { fetchXml } from "@/lib/rssHttp";
+import { fetchHtml, fetchXml } from "@/lib/rssHttp";
 import { cleanText, truncateText } from "@/lib/text";
-import type { Article, SourceFailure } from "@/lib/types";
-
-type RssSource = (typeof RSS_SOURCES)[number];
+import type { Article, ContentSource, SourceFailure } from "@/lib/types";
 
 type ParsedFeed = Readonly<{
   rss?: Readonly<{ channel?: Readonly<{ item?: unknown }> }>;
@@ -26,7 +28,7 @@ export async function fetchArticlesForRange(
   range: Readonly<{ start: Date; end: Date }>,
 ): Promise<Readonly<{ articles: readonly Article[]; failures: readonly SourceFailure[] }>> {
   const results = await Promise.all(
-    RSS_SOURCES.map((source) => fetchSourceArticles(source, range)),
+    CONTENT_SOURCES.map((source) => fetchSourceArticles(source, range)),
   );
 
   return {
@@ -36,17 +38,11 @@ export async function fetchArticlesForRange(
 }
 
 async function fetchSourceArticles(
-  source: RssSource,
+  source: ContentSource,
   range: Readonly<{ start: Date; end: Date }>,
 ): Promise<FetchResult> {
   try {
-    const xml = await fetchXml(source.url);
-    const feed = parser.parse(xml) as ParsedFeed;
-    const entries = extractEntries(feed);
-    const articles = entries
-      .map((entry) => parseEntry(entry, source))
-      .filter((article): article is Article => article !== undefined)
-      .filter((article) => isWithinRange(new Date(article.publishedAt), range));
+    const articles = await fetchSourceByKind(source, range);
 
     return { ok: true, articles };
   } catch (error) {
@@ -60,13 +56,61 @@ async function fetchSourceArticles(
   }
 }
 
+async function fetchSourceByKind(
+  source: ContentSource,
+  range: Readonly<{ start: Date; end: Date }>,
+): Promise<readonly Article[]> {
+  if (source.kind === "rss") {
+    return fetchRssArticles(source, range);
+  }
+
+  if (source.kind === "html") {
+    return fetchHtmlArticles(source, range.start);
+  }
+
+  return source.items.map((item) => ({
+    title: item.title,
+    link: item.link,
+    source: source.name,
+    publishedAt: range.start.toISOString(),
+    content: item.content,
+    categoryHint: item.categoryHint,
+  }));
+}
+
+async function fetchRssArticles(
+  source: ContentSource,
+  range: Readonly<{ start: Date; end: Date }>,
+): Promise<readonly Article[]> {
+  const xml = await fetchXml(source.url);
+  const feed = parser.parse(xml) as ParsedFeed;
+  const entries = extractEntries(feed);
+
+  return entries
+    .map((entry) => parseEntry(entry, source))
+    .filter((article): article is Article => article !== undefined)
+    .filter((article) => isWithinRange(new Date(article.publishedAt), range));
+}
+
+async function fetchHtmlArticles(
+  source: ContentSource,
+  date: Date,
+): Promise<readonly Article[]> {
+  const html = await fetchHtml(source.url);
+  const links = extractHtmlLinks(html, source.url);
+
+  return uniqueLinks(links)
+    .slice(0, HTML_SOURCE_ITEM_LIMIT)
+    .map((link) => buildHtmlArticle(link, source, date));
+}
+
 function extractEntries(feed: ParsedFeed): readonly unknown[] {
   const rssItems = feed.rss?.channel?.item;
   const atomEntries = feed.feed?.entry;
   return normalizeArray(rssItems ?? atomEntries);
 }
 
-function parseEntry(entry: unknown, source: RssSource): Article | undefined {
+function parseEntry(entry: unknown, source: ContentSource): Article | undefined {
   if (!isRecord(entry)) {
     return undefined;
   }
@@ -80,7 +124,87 @@ function parseEntry(entry: unknown, source: RssSource): Article | undefined {
     return undefined;
   }
 
-  return { title, link, source: source.name, publishedAt, content };
+  return {
+    title,
+    link,
+    source: source.name,
+    publishedAt,
+    content,
+    categoryHint: readCategoryHint(source),
+  };
+}
+
+type HtmlLink = Readonly<{
+  title: string;
+  link: string;
+}>;
+
+function extractHtmlLinks(html: string, baseUrl: string): readonly HtmlLink[] {
+  const matches = html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
+
+  return Array.from(matches)
+    .map((match) => parseHtmlLink(match, baseUrl))
+    .filter((link): link is HtmlLink => link !== undefined);
+}
+
+function parseHtmlLink(match: RegExpMatchArray, baseUrl: string): HtmlLink | undefined {
+  const href = match[1];
+  const title = cleanText(match[2] ?? "");
+
+  if (!href || !isUsefulHref(href) || !isUsefulTitle(title)) {
+    return undefined;
+  }
+
+  return {
+    title,
+    link: new URL(href, baseUrl).toString(),
+  };
+}
+
+function uniqueLinks(links: readonly HtmlLink[]): readonly HtmlLink[] {
+  const seen = new Set<string>();
+
+  return links.filter((item) => {
+    if (seen.has(item.link)) {
+      return false;
+    }
+
+    seen.add(item.link);
+    return true;
+  });
+}
+
+function buildHtmlArticle(
+  item: HtmlLink,
+  source: ContentSource,
+  date: Date,
+): Article {
+  return {
+    title: item.title,
+    link: item.link,
+    source: source.name,
+    publishedAt: date.toISOString(),
+    content: item.title,
+    categoryHint: readCategoryHint(source),
+  };
+}
+
+function isUsefulTitle(title: string): boolean {
+  const ignoredTitle = /^(首页|登录|注册|更多|关于|下载|文档|搜索|菜单|上一页|下一页)$/i;
+
+  return title.length >= 6 && !ignoredTitle.test(title);
+}
+
+function isUsefulHref(href: string): boolean {
+  if (/^(#|javascript:|mailto:|tel:)/i.test(href)) {
+    return false;
+  }
+
+  return !/\.(png|jpe?g|gif|svg|webp|pdf|zip)$/i.test(href);
+}
+
+function readCategoryHint(source: ContentSource): Article["categoryHint"] {
+  return "categoryHint" in source ? source.categoryHint : undefined;
 }
 
 function parsePublishedAt(entry: Readonly<Record<string, unknown>>): string | undefined {

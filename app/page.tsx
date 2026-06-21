@@ -51,7 +51,7 @@ export default function Home() {
       )}
 
       {fatalError && <ErrorPanel message={fatalError} />}
-      {errors.length > 0 && <SourceErrors errors={errors} />}
+      {!report && errors.length > 0 && <SourceErrors errors={errors} />}
 
       {!report && !fatalError && (
         <section className="empty-state">
@@ -116,7 +116,7 @@ function ErrorPanel({ message }: Readonly<{ message: string }>) {
 function SourceErrors({ errors }: Readonly<{ errors: readonly SourceFailure[] }>) {
   return (
     <section className="notice warning">
-      <h2>部分 RSS 源抓取失败</h2>
+      <h2>部分信息源抓取失败</h2>
       <ul>
         {errors.map((error) => (
           <li key={`${error.source}-${error.reason}`}>

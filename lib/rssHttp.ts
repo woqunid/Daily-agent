@@ -14,6 +14,7 @@ type NodeRequestInit = RequestInit & Readonly<{
 }>;
 
 const RSS_ACCEPT_HEADER = "application/rss+xml, application/atom+xml, text/xml, */*";
+const HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 const RSS_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 const RETRYABLE_ERROR_CODES = new Set([
@@ -26,12 +27,20 @@ const RETRYABLE_ERROR_CODES = new Set([
 ]);
 
 export async function fetchXml(url: string): Promise<string> {
+  return fetchText(url, RSS_ACCEPT_HEADER);
+}
+
+export async function fetchHtml(url: string): Promise<string> {
+  return fetchText(url, HTML_ACCEPT_HEADER);
+}
+
+async function fetchText(url: string, acceptHeader: string): Promise<string> {
   const options = readFetchOptions(process.env);
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= FETCH_RETRY_COUNT; attempt += 1) {
     try {
-      return await fetchXmlOnce(url, options);
+      return await fetchTextOnce({ url, acceptHeader, options });
     } catch (error) {
       lastError = error;
 
@@ -46,6 +55,12 @@ export async function fetchXml(url: string): Promise<string> {
   throw lastError;
 }
 
+type FetchTextOptions = Readonly<{
+  url: string;
+  acceptHeader: string;
+  options: FetchOptions;
+}>;
+
 function readFetchOptions(env: NodeJS.ProcessEnv): FetchOptions {
   const proxyUrl = env.RSS_PROXY_URL?.trim();
 
@@ -56,21 +71,21 @@ function readFetchOptions(env: NodeJS.ProcessEnv): FetchOptions {
   return { dispatcher: new ProxyAgent(proxyUrl) };
 }
 
-async function fetchXmlOnce(url: string, options: FetchOptions): Promise<string> {
+async function fetchTextOnce(config: FetchTextOptions): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
     const requestInit: NodeRequestInit = {
       signal: controller.signal,
-      dispatcher: options.dispatcher,
+      dispatcher: config.options.dispatcher,
       headers: {
-        accept: RSS_ACCEPT_HEADER,
+        accept: config.acceptHeader,
         "user-agent": RSS_USER_AGENT,
       },
       cache: "no-store",
     };
-    const response = await fetch(url, requestInit);
+    const response = await fetch(config.url, requestInit);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);

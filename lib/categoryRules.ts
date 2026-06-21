@@ -6,10 +6,13 @@ type CategoryName = (typeof CATEGORY_NAMES)[number];
 const CATEGORY_KEYWORDS: Readonly<Record<CategoryName, readonly string[]>> = {
   大模型: [
     "大模型",
+    "模型",
     "语言模型",
     "基础模型",
     "多模态",
     "推理模型",
+    "人工智能",
+    "生成式",
     "llm",
     "large language model",
     "foundation model",
@@ -18,12 +21,20 @@ const CATEGORY_KEYWORDS: Readonly<Record<CategoryName, readonly string[]>> = {
     "gemini",
     "llama",
     "qwen",
+    "通义千问",
     "deepseek",
+    "kimi",
+    "智谱",
+    "豆包",
+    "文心",
+    "百川",
     "mistral",
   ],
   图像生成: [
     "图像",
     "图片",
+    "视觉",
+    "视频",
     "视频生成",
     "文生图",
     "生图",
@@ -38,6 +49,10 @@ const CATEGORY_KEYWORDS: Readonly<Record<CategoryName, readonly string[]>> = {
     "sora",
     "veo",
     "imagen",
+    "qwen-image",
+    "可灵",
+    "即梦",
+    "混元",
     "flux",
   ],
   "AI 编程": [
@@ -57,6 +72,11 @@ const CATEGORY_KEYWORDS: Readonly<Record<CategoryName, readonly string[]>> = {
     "cursor",
     "claude code",
     "ide",
+    "api",
+    "sdk",
+    "开发",
+    "开发工具",
+    "代码助手",
   ],
   "AI 软件技术及知识": [
     "教程",
@@ -79,6 +99,12 @@ const CATEGORY_KEYWORDS: Readonly<Record<CategoryName, readonly string[]>> = {
     "embedding",
     "vector",
     "framework",
+    "文档",
+    "开源",
+    "模型部署",
+    "模型服务",
+    "提示词",
+    "知识库",
   ],
 };
 
@@ -90,6 +116,7 @@ export function scoreArticleForCategory(
   categoryName: DailyCategory["name"],
 ): number {
   const keywords = readCategoryKeywords(categoryName);
+  const hintScore = article.categoryHint === categoryName ? TITLE_WEIGHT * 2 : 0;
   const title = article.title.toLocaleLowerCase();
   const content = article.content.toLocaleLowerCase();
 
@@ -99,7 +126,7 @@ export function scoreArticleForCategory(
     const contentScore = content.includes(token) ? CONTENT_WEIGHT : 0;
 
     return score + titleScore + contentScore;
-  }, 0);
+  }, hintScore);
 }
 
 export function readCategoryKeywords(
